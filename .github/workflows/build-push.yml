@@ -33,6 +33,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # ACR 开关：secret 先落到 env（if: 里不让直接写 secrets），没配则跳过同步步骤
+    env:
+      ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
@@ -68,9 +71,8 @@ jobs:
 
       # ---- 同步到阿里云 ACR（国内 AutoDL 用；没配 Secrets 自动跳过） ----
       - name: 同步镜像到阿里云 ACR
-        if: ${{ secrets.ACR_REGISTRY != '' }}
+        if: ${{ env.ACR_REGISTRY != '' }}
         env:
-          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
           ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
