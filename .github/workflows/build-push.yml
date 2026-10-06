@@ -1,0 +1,84 @@
+# GitHub Actions：云端免费构建 ComfyUI 镜像并推送
+# 触发方式：手机打开仓库 → Actions → 选这个 workflow → Run workflow
+# 推送目标：
+#   1. GHCR（ghcr.io/<你的用户名>/comfyui-env），公开，海外 Vast.ai 用
+#   2. 阿里云 ACR（可选）：配好下方 Secrets 后自动同步，国内 AutoDL 用
+#
+# 需要配置的 GitHub Secrets（仓库 Settings → Secrets and variables → Actions）：
+#   ACR_REGISTRY   如 registry.cn-hangzhou.aliyuncs.com（不配则跳过 ACR 同步）
+#   ACR_NAMESPACE  你的 ACR 命名空间
+#   ACR_USERNAME   阿里云账号（建议用子账号的 AccessKey ID）
+#   ACR_PASSWORD   对应密码（建议用子账号的 AccessKey Secret，只给 ACR 推送权限）
+# 注意：镜像名用 github.repository_owner 动态获取，不写死用户名。
+
+name: Build and Push ComfyUI image
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "entrypoint.sh"
+      - "download_models.sh"
+      - "MODELS.txt"
+      - ".github/workflows/build-push.yml"
+
+env:
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/comfyui-env
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GHCR_IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: 构建并推送到 GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ---- 同步到阿里云 ACR（国内 AutoDL 用；没配 Secrets 自动跳过） ----
+      - name: 同步镜像到阿里云 ACR
+        if: ${{ secrets.ACR_REGISTRY != '' }}
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+          ACR_IMAGE="$ACR_REGISTRY/$ACR_NAMESPACE/comfyui-env:latest"
+          docker pull "$GHCR_IMAGE:latest"
+          docker tag "$GHCR_IMAGE:latest" "$ACR_IMAGE"
+          docker push "$ACR_IMAGE"
+          echo "已同步到: $ACR_IMAGE"
