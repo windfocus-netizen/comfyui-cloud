@@ -79,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
-          ACR_IMAGE="$ACR_REGISTRY/$ACR_NAMESPACE/comfyui-env:latest"
+          ACR_IMAGE="$ACR_REGISTRY/$ACR_NAMESPACE/mythos:latest"
           docker pull "$GHCR_IMAGE:latest"
           docker tag "$GHCR_IMAGE:latest" "$ACR_IMAGE"
           docker push "$ACR_IMAGE"
